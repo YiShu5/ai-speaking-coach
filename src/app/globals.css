@@ -1,26 +1,212 @@
 @import "tailwindcss";
 
+/* SpeakCoach 设计令牌（对齐 PRD 第十章 UI 规范） */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* 背景与卡片 */
+  --bg: #fffdfb;
+  --paper: rgba(255, 255, 255, 0.82);
+  --paper-solid: #ffffff;
+  --soft: #f6f8ff;
+  --soft-blue: #eaf3ff;
+
+  /* 主色 */
+  --blue: #75a9ff;
+  --blue-deep: #4e87df;
+  --lavender: #c9b8ff;
+  --lavender-soft: #f1ecff;
+
+  /* 暖色点缀 */
+  --warm: #ffd6a5;
+  --warm-2: #ffe7c9;
+  --peach: #ffb7a3;
+
+  /* 文本 */
+  --ink: #202735;
+  --muted: #7b8494;
+  --quiet: #a8b0bd;
+
+  /* 分割线 */
+  --line: rgba(112, 132, 162, 0.14);
+
+  /* 阴影 */
+  --shadow: 0 20px 54px rgba(86, 106, 143, 0.16);
+  --soft-shadow: 0 12px 32px rgba(91, 111, 145, 0.11);
+  --panel-shadow: 0 24px 68px rgba(90, 117, 163, 0.18);
+  --btn-shadow: 0 16px 34px rgba(117, 169, 255, 0.3);
+  --record-shadow: 0 18px 36px rgba(117, 169, 255, 0.34);
+  --score-shadow: 0 18px 36px rgba(117, 169, 255, 0.28);
+
+  /* 圆角 */
+  --radius: 22px;
+  --radius-lg: 28px;
+  --pill: 999px;
+
+  /* 练习页深色 */
+  --stage: #2d3442;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-paper: var(--paper);
+  --color-paper-solid: var(--paper-solid);
+  --color-soft: var(--soft);
+  --color-soft-blue: var(--soft-blue);
+  --color-blue: var(--blue);
+  --color-blue-deep: var(--blue-deep);
+  --color-lavender: var(--lavender);
+  --color-lavender-soft: var(--lavender-soft);
+  --color-warm: var(--warm);
+  --color-warm-2: var(--warm-2);
+  --color-peach: var(--peach);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-quiet: var(--quiet);
+  --color-line: var(--line);
+  --color-stage: var(--stage);
+
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Inter", Arial, sans-serif;
+
+  --radius-default: 22px;
+  --radius-lg: 28px;
+  --radius-pill: 999px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 全局浮动光斑背景 */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.aurora-blob.a {
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(117, 169, 255, 0.45), transparent 70%);
+  top: -160px;
+  left: -120px;
+  animation: drift1 22s ease-in-out infinite;
+}
+.aurora-blob.b {
+  width: 460px;
+  height: 460px;
+  background: radial-gradient(circle, rgba(201, 184, 255, 0.4), transparent 70%);
+  bottom: -140px;
+  right: -100px;
+  animation: drift2 26s ease-in-out infinite;
+}
+.aurora-blob.c {
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, rgba(255, 214, 165, 0.3), transparent 70%);
+  top: 40%;
+  left: 50%;
+  animation: drift3 30s ease-in-out infinite;
+}
+@keyframes drift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(60px, 40px) scale(1.1); }
+}
+@keyframes drift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-50px, -30px) scale(1.08); }
+}
+@keyframes drift3 {
+  0%, 100% { transform: translate(-50%, 0) scale(1); }
+  50% { transform: translate(-50%, -40px) scale(0.95); }
+}
+
+/* 录音波纹 */
+.wave-bars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+}
+.wave-bars span {
+  width: 4px;
+  background: #fff;
+  border-radius: 2px;
+  animation: wave 0.72s ease-in-out infinite alternate;
+}
+.wave-bars span:nth-child(1) { animation-delay: 0s; }
+.wave-bars span:nth-child(2) { animation-delay: 0.1s; }
+.wave-bars span:nth-child(3) { animation-delay: 0.2s; }
+.wave-bars span:nth-child(4) { animation-delay: 0.3s; }
+.wave-bars span:nth-child(5) { animation-delay: 0.4s; }
+@keyframes wave {
+  from { height: 8px; }
+  to { height: 20px; }
+}
+
+/* 大号录音波纹（右侧面板） */
+.wave-bars-large {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 48px;
+}
+.wave-bars-large span {
+  width: 6px;
+  background: linear-gradient(180deg, var(--blue), var(--lavender));
+  border-radius: 3px;
+  animation: wave-large 0.9s ease-in-out infinite alternate;
+}
+.wave-bars-large span:nth-child(1) { animation-delay: 0s; }
+.wave-bars-large span:nth-child(2) { animation-delay: 0.1s; }
+.wave-bars-large span:nth-child(3) { animation-delay: 0.2s; }
+.wave-bars-large span:nth-child(4) { animation-delay: 0.3s; }
+.wave-bars-large span:nth-child(5) { animation-delay: 0.15s; }
+.wave-bars-large span:nth-child(6) { animation-delay: 0.25s; }
+.wave-bars-large span:nth-child(7) { animation-delay: 0.35s; }
+@keyframes wave-large {
+  from { height: 12px; }
+  to { height: 48px; }
+}
+
+/* 滚动条 */
+.scroll-soft::-webkit-scrollbar { width: 6px; }
+.scroll-soft::-webkit-scrollbar-thumb {
+  background: rgba(123, 132, 148, 0.25);
+  border-radius: 3px;
+}
+.scroll-soft::-webkit-scrollbar-track { background: transparent; }
+
+/* 渐变文字 */
+.gradient-text {
+  background: linear-gradient(135deg, var(--blue), var(--lavender));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Toast */
+.toast-enter {
+  animation: toastIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
