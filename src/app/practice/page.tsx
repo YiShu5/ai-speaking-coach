@@ -9,6 +9,7 @@ import { REVIEWERS } from "@/lib/reviewers";
 import { finishPractice } from "@/lib/mock-api";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { formatTime } from "@/lib/utils";
+import type { TranscriptSentence } from "@/types";
 
 type Phase = "idle" | "connecting" | "live" | "paused" | "finishing" | "done";
 
@@ -38,6 +39,7 @@ export default function PracticePage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalTextRef = useRef("");
   const interimTextRef = useRef("");
+  const sentencesRef = useRef<TranscriptSentence[]>([]);
   const isPausedRef = useRef(false);
   const finishResolveRef = useRef<((value: string) => void) | null>(null);
 
@@ -126,6 +128,7 @@ export default function PracticePage() {
     setTranscribeError(null);
     finalTextRef.current = "";
     interimTextRef.current = "";
+    sentencesRef.current = [];
     setFinalText("");
     setInterimText("");
     isPausedRef.current = false;
@@ -156,7 +159,14 @@ export default function PracticePage() {
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
-        let msg: { type: string; text?: string; sentenceEnd?: boolean; message?: string };
+        let msg: {
+          type: string;
+          text?: string;
+          sentenceEnd?: boolean;
+          message?: string;
+          beginMs?: number | null;
+          endMs?: number | null;
+        };
         try {
           msg = JSON.parse(event.data);
         } catch {
@@ -177,6 +187,19 @@ export default function PracticePage() {
             interimTextRef.current = "";
             setFinalText(finalTextRef.current);
             setInterimText("");
+            // 带时间戳的完整句：用于计算语速/停顿等客观指标
+            if (
+              msg.text &&
+              typeof msg.beginMs === "number" &&
+              typeof msg.endMs === "number" &&
+              msg.endMs > msg.beginMs
+            ) {
+              sentencesRef.current.push({
+                text: msg.text,
+                beginMs: msg.beginMs,
+                endMs: msg.endMs,
+              });
+            }
           } else {
             // 中间结果
             interimTextRef.current = msg.text || "";
@@ -302,7 +325,13 @@ export default function PracticePage() {
     const finalElapsed = useAppStore.getState().elapsed;
     const finalPauseCount = useAppStore.getState().pauseCount;
     if (practiceId) {
-      await finishPractice(practiceId, finalTranscript, finalElapsed, finalPauseCount);
+      await finishPractice(
+        practiceId,
+        finalTranscript,
+        finalElapsed,
+        finalPauseCount,
+        sentencesRef.current
+      );
       setPhase("done");
       router.push(`/report/${practiceId}`);
     }

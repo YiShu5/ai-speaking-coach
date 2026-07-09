@@ -60,10 +60,10 @@ const COACH_PERSONAS: Record<string, string> = {
 反馈："这句话没有提供新的信息，会削弱重点。可以改成：'我建议先做小范围测试，再决定是否全量上线。'"
 你的打分维度是「重点表达」。`,
 
-  expression: `你是 SpeakCoach 的表达教练，评估语气词、卡顿、句子顺畅度和口语表达质量。你是一名口语表达教练，专门分析用户说话是否自然、顺畅、容易被听懂。你关注语气词、重复、长句、断句、口头禅和表达绕的问题。
+  expression: `你是 SpeakCoach 的表达教练，评估语气词、卡顿、语速节奏、句子顺畅度和口语表达质量。你是一名口语表达教练，专门分析用户说话是否自然、顺畅、容易被听懂。你关注语气词、重复、长句、断句、口头禅和表达绕的问题。
 偏好自然、有节奏、像真人发言而不是背稿的表达。
-目标：1.找出影响流畅度的语气词、重复和卡顿表达 2.判断句子是否过长、过绕或不完整 3.帮用户把话改得更自然、更容易说出口
-约束：1.如果没有音频指标，不得假装判断音量、语速、语调 2.只能基于转写文本分析表达流畅度 3.不要求用户完全消灭口语感 4.改写必须适合真实口头发言
+目标：1.找出影响流畅度的语气词、重复和卡顿表达 2.判断句子是否过长、过绕或不完整 3.结合客观语音指标评价语速与停顿是否影响听感 4.帮用户把话改得更自然、更容易说出口
+约束：1.语速与停顿只能依据素材中提供的客观语音指标评价，未提供指标时不评价语速 2.音量、语调、发音始终无数据，不得推测 3.不要求用户完全消灭口语感 4.改写必须适合真实口头发言
 工作步骤：1.读取用户转写文本 2.标记语气词、重复、绕口表达 3.判断哪些问题最影响听感 4.给出更顺口的表达版本
 反馈风格示范——
 用户原文："嗯，然后就是我们这个方案其实就是想解决一个问题。"
@@ -134,6 +134,75 @@ const MAX_FILE_CHARS = 3000;
 const truncate = (text: string, max: number) =>
   text.length > max ? text.slice(0, max) + "\n（内容过长，已截断）" : text;
 
+// 带时间戳的转写句（ASR 句级起止时间，毫秒）
+interface TimedSentence {
+  text: string;
+  beginMs: number;
+  endMs: number;
+}
+
+// 由句级时间戳确定性计算客观语音指标，输出注入提示词的文本块。
+// LLM 不擅长对长时间戳列表做算术，所以数字在这里算好，agent 只负责解读
+function buildSpeechMetricsBlock(sentences: unknown): string | null {
+  if (!Array.isArray(sentences)) return null;
+  const valid = (sentences as TimedSentence[]).filter(
+    (s) =>
+      s &&
+      typeof s.text === "string" &&
+      s.text.trim().length > 0 &&
+      typeof s.beginMs === "number" &&
+      typeof s.endMs === "number" &&
+      s.endMs > s.beginMs
+  );
+  if (valid.length === 0) return null;
+
+  const totalChars = valid.reduce((n, s) => n + s.text.trim().length, 0);
+  const speakingMs = valid.reduce((n, s) => n + (s.endMs - s.beginMs), 0);
+  if (speakingMs < 3000 || totalChars < 10) return null; // 数据太少，指标无意义
+  const pace = Math.round(totalChars / (speakingMs / 60000));
+
+  // 逐句语速（太短的句子噪声大，只统计 ≥6 字的句子）
+  const paced = valid
+    .filter((s) => s.text.trim().length >= 6)
+    .map((s) => ({
+      text: s.text.trim(),
+      pace: Math.round(s.text.trim().length / ((s.endMs - s.beginMs) / 60000)),
+    }));
+  const fastest = paced.length ? paced.reduce((a, b) => (b.pace > a.pace ? b : a)) : null;
+  const slowest = paced.length ? paced.reduce((a, b) => (b.pace < a.pace ? b : a)) : null;
+
+  // 句间停顿 ≥2 秒视为明显停顿
+  const pauses: Array<{ afterText: string; gapS: number }> = [];
+  for (let i = 1; i < valid.length; i++) {
+    const gap = valid[i].beginMs - valid[i - 1].endMs;
+    if (gap >= 2000) {
+      pauses.push({
+        afterText: valid[i - 1].text.trim().slice(-15),
+        gapS: Math.round(gap / 100) / 10,
+      });
+    }
+  }
+  const maxPause = pauses.length ? pauses.reduce((a, b) => (b.gapS > a.gapS ? b : a)) : null;
+
+  const lines = [
+    "客观语音指标（由句级时间戳真实计算，可作为评审依据）：",
+    `- 整体语速：约 ${pace} 字/分钟（中文口语汇报的舒适区间约为 160-220 字/分钟）`,
+  ];
+  if (fastest && slowest && fastest.pace !== slowest.pace) {
+    lines.push(`- 最快一句：约 ${fastest.pace} 字/分钟（"${fastest.text.slice(0, 18)}…"）`);
+    lines.push(`- 最慢一句：约 ${slowest.pace} 字/分钟（"${slowest.text.slice(0, 18)}…"）`);
+  }
+  if (pauses.length && maxPause) {
+    lines.push(
+      `- 明显停顿（≥2 秒）：${pauses.length} 次，最长 ${maxPause.gapS} 秒，出现在"…${maxPause.afterText}"之后`
+    );
+  } else {
+    lines.push("- 无 ≥2 秒的明显停顿");
+  }
+  lines.push("（音量、语调、发音仍无数据，不得推测。）");
+  return lines.join("\n");
+}
+
 // 公共发言素材（每位 agent 收到同一份）
 const buildContext = (
   transcript: string,
@@ -141,14 +210,17 @@ const buildContext = (
   fileContent: string,
   mode: string,
   durationS: number,
-  pauseCount: number
+  pauseCount: number,
+  speechMetricsBlock: string | null
 ) => `请对以下演讲内容进行评审。
 
 练习场景：${fileName || "通用表达练习"}
 练习模式：${mode === "10min" ? "10 分钟练习" : "5 分钟练习"}
 实际发言时长：${durationS > 0 ? `${Math.floor(durationS / 60)} 分 ${durationS % 60} 秒` : "未知"}
 暂停次数：${pauseCount} 次
-（时长与暂停是客观采集数据：如果实际时长远低于练习模式的预期，应在评分中如实反映。不要假装知道语速、音量等未提供的音频指标。）
+（时长与暂停是客观采集数据：如果实际时长远低于练习模式的预期，应在评分中如实反映。）
+
+${speechMetricsBlock ?? "（本次未提供语音时间数据：不要假装知道语速、停顿、音量等音频指标。）"}
 
 参考文稿（${fileName || "未命名文稿"}）：
 ${fileContent ? truncate(fileContent, MAX_FILE_CHARS) : "（用户未上传参考文稿）"}
@@ -220,6 +292,7 @@ export async function POST(request: Request) {
     mode?: string;
     durationS?: number;
     pauseCount?: number;
+    sentences?: unknown;
   };
 
   try {
@@ -253,7 +326,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    const context = buildContext(transcript, fileName, fileContent, mode, durationS, pauseCount);
+    const speechMetricsBlock = buildSpeechMetricsBlock(body.sentences);
+    const context = buildContext(
+      transcript,
+      fileName,
+      fileContent,
+      mode,
+      durationS,
+      pauseCount,
+      speechMetricsBlock
+    );
 
     // 阶段 1：5 位分项教练并行独立评审（互不知晓彼此结论，判断真正独立）
     const stage1Ids = ["logic", "keypoint", "expression", "scene", "audience"];

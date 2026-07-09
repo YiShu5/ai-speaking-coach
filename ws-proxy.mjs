@@ -113,6 +113,9 @@ wss.on("connection", (clientWs, req) => {
             type: "result",
             text: sentence.text || "",
             sentenceEnd: !!sentence.sentence_end,
+            // 句级起止时间（毫秒），用于客户端计算语速/停顿指标
+            beginMs: typeof sentence.begin_time === "number" ? sentence.begin_time : null,
+            endMs: typeof sentence.end_time === "number" ? sentence.end_time : null,
           })
         );
       }

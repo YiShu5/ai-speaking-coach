@@ -96,3 +96,10 @@ export interface TranscriptLine {
   text: string;
   ts: number; // 时间戳
 }
+
+// 带时间戳的转写句（来自 ASR 的句级起止时间，用于计算语速/停顿等客观指标）
+export interface TranscriptSentence {
+  text: string;
+  beginMs: number; // 句子起始时间（相对录音开始，毫秒）
+  endMs: number; // 句子结束时间（毫秒）
+}

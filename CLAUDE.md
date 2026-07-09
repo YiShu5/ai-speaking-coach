@@ -39,6 +39,8 @@ Browsers can't set an `Authorization` header on a WebSocket, which is why `ws-pr
 
 The proxy translates between two protocols: browser sends binary PCM plus a `{type:"finish"}` text message; proxy speaks DashScope's `run-task`/`finish-task` envelopes and emits `ready` / `result` / `finished` / `error` back. Audio only starts flowing after `ready` (the worklet is connected in the `ready` handler, not at record time). On `finish`, the practice page awaits a final `finished` event with a 15s timeout before writing the transcript.
 
+`result` messages carry sentence-level `beginMs`/`endMs` from Paraformer. The practice page accumulates completed sentences with timing (`speakcoach_sentences_<id>` in localStorage) and the report route derives objective speech metrics from them **in code, not in the LLM** (`buildSpeechMetricsBlock`: chars/min overall and per sentence, inter-sentence pauses ≥2s) — the numbers are precomputed and injected into the shared context; agents only interpret. The expression coach's rubric allows judging pace/pauses *only* from these metrics; volume/pitch stay off-limits. Records without timing data degrade gracefully (block replaced by a "don't fake audio metrics" note).
+
 Pausing does not tear down the socket — `isPausedRef` just stops forwarding audio frames.
 
 ### Scoring (7-agent architecture)

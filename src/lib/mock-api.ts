@@ -5,6 +5,7 @@ import type {
   PracticeMode,
   PracticeRecord,
   PracticeReport,
+  TranscriptSentence,
   TrendPoint,
   AppUser,
 } from "@/types";
@@ -139,7 +140,8 @@ export async function finishPractice(
   id: string,
   transcript: string,
   durationS: number,
-  pauseCount: number
+  pauseCount: number,
+  sentences?: TranscriptSentence[]
 ): Promise<void> {
   const records = loadRecords();
   const idx = records.findIndex((r) => r.id === id);
@@ -152,6 +154,10 @@ export async function finishPractice(
       status: "completed",
     };
     saveRecords(records);
+  }
+  // 带时间戳的句子单独存（同文稿内容的模式），供报告生成计算语速/停顿指标
+  if (sentences?.length && typeof window !== "undefined") {
+    localStorage.setItem(`speakcoach_sentences_${id}`, JSON.stringify(sentences));
   }
 }
 
@@ -180,6 +186,18 @@ export async function generateReport(practiceId: string): Promise<PracticeReport
     fileContent = localStorage.getItem(`speakcoach_file_${practiceId}`) ?? "";
   }
 
+  // 读取带时间戳的转写句（旧记录没有，传空数组自然降级）
+  let sentences: TranscriptSentence[] = [];
+  if (typeof window !== "undefined") {
+    try {
+      sentences = JSON.parse(
+        localStorage.getItem(`speakcoach_sentences_${practiceId}`) ?? "[]"
+      ) as TranscriptSentence[];
+    } catch {
+      sentences = [];
+    }
+  }
+
   // 本次之前已完成的练习：数量决定打分校准（前松后严），有分记录用于百分位
   const prevCompleted = records.filter(
     (r) => r.id !== practiceId && r.status === "completed"
@@ -199,6 +217,7 @@ export async function generateReport(practiceId: string): Promise<PracticeReport
         mode: record?.mode,
         durationS: record?.durationS ?? 0,
         pauseCount: record?.pauseCount ?? 0,
+        sentences,
       }),
     });
     const data = await res.json();
