@@ -49,7 +49,8 @@ export default function ReportPage() {
   }
 
   useEffect(() => {
-    load(true);
+    // 优先使用已缓存的报告，避免从历史进入时覆盖第一次的评价
+    load(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [practiceId]);
 

@@ -1,11 +1,14 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
-import { Sparkles, Clock, History, Settings } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Sparkles, History, Settings, User, LogOut } from "lucide-react";
 import { useAppStore } from "@/stores/app-store";
 import { Avatar } from "@/components/ui/Avatar";
+import { ProfileDialog } from "@/components/ui/ProfileDialog";
+import { logout } from "@/lib/mock-api";
 
 const NAV = [
   { href: "/", label: "开始", icon: Sparkles },
@@ -14,7 +17,41 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
+  const showToast = useAppStore((s) => s.showToast);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
+  function handleLogout() {
+    setMenuOpen(false);
+    showToast("正在退出登录…");
+    logout();
+    setUser(null);
+    setTimeout(() => {
+      router.push("/login");
+    }, 400);
+  }
+
+  function handleProfile() {
+    setMenuOpen(false);
+    setProfileOpen(true);
+  }
 
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col gap-6 p-6">
@@ -78,21 +115,72 @@ export function Sidebar() {
 
       <div className="flex-1" />
 
-      {/* 个人资料 */}
-      <div className="flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-3">
-        <Avatar char={user?.displayName?.[0] ?? "练"} size={40} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold text-[var(--ink)]">
-            {user?.displayName ?? "练习者"}
+      {/* 个人资料 + 设置下拉菜单 */}
+      <div className="relative" ref={menuRef}>
+        {/* 下拉菜单（按钮上方） */}
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl bg-[var(--paper-solid)]"
+              style={{ border: "1px solid var(--line)", boxShadow: "var(--shadow)" }}
+            >
+              <button
+                onClick={handleProfile}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--soft-blue)]"
+              >
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                  style={{ background: "linear-gradient(135deg, var(--blue), var(--lavender))" }}
+                >
+                  <User size={14} />
+                </div>
+                <span className="text-sm font-bold text-[var(--ink)]">个人资料</span>
+              </button>
+              <div className="h-px bg-[var(--line)]" />
+              <button
+                onClick={handleLogout}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fef2f2]"
+              >
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                  style={{ background: "linear-gradient(135deg, #ef4444, #f97316)" }}
+                >
+                  <LogOut size={14} />
+                </div>
+                <span className="text-sm font-bold text-[#dc2626]">退出登录</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 个人资料条 */}
+        <div className="flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-3">
+          <Avatar char={user?.displayName?.[0] ?? "练"} size={40} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-bold text-[var(--ink)]">
+              {user?.displayName ?? "练习者"}
+            </div>
+            <div className="truncate text-xs text-[var(--muted)]">
+              {user?.phone ?? "未登录"}
+            </div>
           </div>
-          <div className="truncate text-xs text-[var(--muted)]">
-            {user?.phone ?? "未登录"}
-          </div>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--soft-blue)]"
+            aria-label="设置"
+            aria-expanded={menuOpen}
+          >
+            <Settings size={16} />
+          </button>
         </div>
-        <button className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--soft-blue)]">
-          <Settings size={16} />
-        </button>
       </div>
+
+      {/* 个人资料弹窗（修改姓名） */}
+      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} />
     </aside>
   );
 }

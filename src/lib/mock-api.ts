@@ -71,6 +71,17 @@ export function logout(): void {
   }
 }
 
+// 更新当前用户姓名（仅允许修改姓名）
+export function updateDisplayName(name: string): AppUser | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(LS_USER);
+  if (!raw) return null;
+  const user = JSON.parse(raw) as AppUser;
+  user.displayName = name.trim();
+  localStorage.setItem(LS_USER, JSON.stringify(user));
+  return user;
+}
+
 // ---------- 练习记录 ----------
 
 function loadRecords(): PracticeRecord[] {

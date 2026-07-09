@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, ChevronRight, TrendingUp } from "lucide-react";
@@ -20,9 +20,15 @@ export default function RecordsPage() {
   const [sortBy, setSortBy] = useState<SortBy>("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
+  // 避免 SSR/CSR hydration 不匹配：localStorage 只在客户端可用
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const trend = useMemo<TrendPoint[]>(() => getTrend(range), [range]);
+  const trend = useMemo<TrendPoint[]>(() => (mounted ? getTrend(range) : []), [range, mounted]);
   const records = useMemo<PracticeRecord[]>(() => {
+    if (!mounted) return [];
     let list = getRecords();
     list = [...list].sort((a, b) => {
       let cmp: number;
@@ -34,7 +40,7 @@ export default function RecordsPage() {
       return sortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [sortBy, sortDir]);
+  }, [sortBy, sortDir, mounted]);
 
   return (
     <div className="scroll-soft h-full overflow-y-auto">
@@ -74,7 +80,9 @@ export default function RecordsPage() {
           </div>
         </motion.div>
 
-        {records.length === 0 ? (
+        {!mounted ? (
+          <RecordsSkeleton />
+        ) : records.length === 0 ? (
           <EmptyState />
         ) : (
           <>
@@ -367,5 +375,18 @@ function EmptyState() {
       <p className="text-lg font-bold text-[var(--ink)]">还没有练习数据</p>
       <p className="mt-1 text-sm text-[var(--muted)]">去完成第一次练习吧</p>
     </motion.div>
+  );
+}
+
+function RecordsSkeleton() {
+  return (
+    <div
+      className="mb-8 flex items-center justify-center rounded-[28px] bg-[var(--paper-solid)] py-20"
+      style={{ border: "1px solid var(--line)", boxShadow: "var(--soft-shadow)" }}
+    >
+      <div
+        className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--line)] border-t-[var(--blue-deep)]"
+      />
+    </div>
   );
 }
