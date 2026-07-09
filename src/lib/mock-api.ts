@@ -261,7 +261,21 @@ export async function generateReport(practiceId: string): Promise<PracticeReport
 
 export function getReport(practiceId: string): PracticeReport | null {
   const reports = loadReports();
-  return reports[practiceId] ?? null;
+  const report = reports[practiceId];
+  return report ? normalizeLegacyReport(report) : null;
+}
+
+// 旧版缓存报告的教练分是按权重折算的（如 26/30），读取时统一换算成百分制
+function normalizeLegacyReport(report: PracticeReport): PracticeReport {
+  if (!report.coaches?.some((c) => c.maxScore > 0 && c.maxScore !== 100)) return report;
+  return {
+    ...report,
+    coaches: report.coaches.map((c) =>
+      c.maxScore > 0 && c.maxScore !== 100
+        ? { ...c, score: Math.round((c.score / c.maxScore) * 100), maxScore: 100 }
+        : c
+    ),
+  };
 }
 
 // ---------- 记录页数据 ----------

@@ -296,8 +296,11 @@ export async function POST(request: Request) {
     const report = JSON.parse(content);
     const coaches = normalizeCoaches(report.coaches);
 
-    // 总分由服务端按权重合成，不信任模型自算；百分位由客户端基于本地历史计算
-    const totalScore = coaches.reduce((sum, c) => sum + c.score, 0);
+    // 总分 = 6 个百分制分数的加权平均（权重和为 100），不信任模型自算；
+    // 六项都在 80 上下时总分也落在 80 上下，用户可一眼核验合理性
+    const totalScore = Math.round(
+      coaches.reduce((sum, c) => sum + c.score * (COACH_WEIGHTS[c.id] ?? 0), 0) / 100
+    );
 
     const fullReport = {
       id: `r_${Date.now()}`,
@@ -369,9 +372,10 @@ function normalizeCoaches(coaches: unknown): Array<{
 
   return order.map((id) => {
     const c = byId.get(id) || {};
-    const maxScore = COACH_WEIGHTS[id];
+    // 统一百分制：每个维度直接展示 0-100 原始分，权重只参与总分合成
     const raw = typeof c.score === "number" ? Math.min(Math.max(c.score, 0), 100) : 0;
-    const score = Math.round((raw / 100) * maxScore);
+    const score = Math.round(raw);
+    const maxScore = 100;
     return {
       id,
       name: (c.name as string) || COACH_NAMES[id] || "教练",
@@ -412,18 +416,23 @@ const COACH_ROLES: Record<string, string> = {
 // Fallback 报告（无 API key 或调用失败时使用），结构与新数据模型一致
 function generateFallbackReport(practiceId: string, fileName: string, transcript: string) {
   const hasTranscript = transcript && transcript.trim().length > 20;
-  // 各教练分数（按权重折算，不超过各自权重）
-  const scoreGen = (max: number) => Math.min(max, Math.floor(max * (0.7 + Math.random() * 0.18)));
+  // 各教练分数：统一百分制（演示数据，70-88 区间）
+  const scoreGen = () => 70 + Math.floor(Math.random() * 19);
   const scores = {
-    logic: scoreGen(COACH_WEIGHTS.logic),
-    keypoint: scoreGen(COACH_WEIGHTS.keypoint),
-    expression: scoreGen(COACH_WEIGHTS.expression),
-    scene: scoreGen(COACH_WEIGHTS.scene),
-    audience: scoreGen(COACH_WEIGHTS.audience),
-    optimizer: scoreGen(COACH_WEIGHTS.optimizer),
+    logic: scoreGen(),
+    keypoint: scoreGen(),
+    expression: scoreGen(),
+    scene: scoreGen(),
+    audience: scoreGen(),
+    optimizer: scoreGen(),
   };
-  const totalScore =
-    scores.logic + scores.keypoint + scores.expression + scores.scene + scores.audience + scores.optimizer;
+  // 总分 = 加权平均，与真实评审同一公式
+  const totalScore = Math.round(
+    (Object.entries(scores) as Array<[string, number]>).reduce(
+      (sum, [id, s]) => sum + s * (COACH_WEIGHTS[id] ?? 0),
+      0
+    ) / 100
+  );
 
   const firstLine = hasTranscript ? transcript.slice(0, 30) + "…" : "今天想和大家聊一下最近做的事情。";
 
@@ -434,7 +443,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "逻辑结构",
       avatarChar: "逻",
       score: scores.logic,
-      maxScore: COACH_WEIGHTS.logic,
+      maxScore: 100,
       summary: "主线推进有条理，结论先行可以让听众更快进入状态。注意中段衔接不要跳跃。",
       revisions: [
         {
@@ -450,7 +459,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "重点表达",
       avatarChar: "重",
       score: scores.keypoint,
-      maxScore: COACH_WEIGHTS.keypoint,
+      maxScore: 100,
       summary: "信息量基本覆盖，但部分铺垫过长，关键结论可以更早出现。",
       revisions: [
         {
@@ -466,7 +475,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "表达流畅",
       avatarChar: "表",
       score: scores.expression,
-      maxScore: COACH_WEIGHTS.expression,
+      maxScore: 100,
       summary: "节奏平稳，减少填充词后句子会更直接有力。注意长句拆分。",
       revisions: [
         {
@@ -482,7 +491,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "场景完成度",
       avatarChar: "景",
       score: scores.scene,
-      maxScore: COACH_WEIGHTS.scene,
+      maxScore: 100,
       summary: "措辞与场景基本匹配，注意根据听众调整技术语言密度，补齐场景必备信息。",
       revisions: [
         {
@@ -498,7 +507,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "听众理解度",
       avatarChar: "听",
       score: scores.audience,
-      maxScore: COACH_WEIGHTS.audience,
+      maxScore: 100,
       summary: "我基本听懂了整体进展，但具体数据没记住，结尾想追问下一步要什么支持。",
       revisions: [
         {
@@ -514,7 +523,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "整体成稿度",
       avatarChar: "优",
       score: scores.optimizer,
-      maxScore: COACH_WEIGHTS.optimizer,
+      maxScore: 100,
       summary: "综合各教练诊断，最需要改进的是结论先行和量化证据，下面给出一版可直接开口的优化稿。",
       revisions: [
         {

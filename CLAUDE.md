@@ -45,7 +45,7 @@ Pausing does not tear down the socket — `isPausedRef` just stops forwarding au
 
 One DeepSeek call (`deepseek-chat`, `response_format: json_object`) drives all 7 personas — 1 overall reviewer + 6 dimension coaches — via a single large system prompt in `src/app/api/report/generate/route.ts`.
 
-**`COACH_WEIGHTS` in that route is the single source of truth for scoring.** Coaches return a raw 0–100 integer per dimension; the server converts each to a weighted score (`raw/100 × weight`) in `normalizeCoaches()` and sums them into `totalScore`. The model is explicitly told *not* to return `totalScore`, `percentile`, or `maxScore` — earlier versions trusted the model's own arithmetic and no longer do. To rebalance dimensions, edit `COACH_WEIGHTS` and the weight percentages quoted in the system prompt.
+**`COACH_WEIGHTS` in that route is the single source of truth for scoring.** Coaches score 0–100 per dimension and that raw score is what users see (uniform 100-point scale, `maxScore` always 100); `totalScore` is the weighted average (`Σ score × weight / 100`), so the total lands visibly within the range of the six sub-scores — it reads as a sanity check. The model is explicitly told *not* to return `totalScore`, `percentile`, or `maxScore` — earlier versions trusted the model's own arithmetic and no longer do. To rebalance dimensions, edit `COACH_WEIGHTS` and the weight percentages quoted in the system prompt. Weights are deliberately not shown in the UI. Legacy cached reports (weighted sub-scores like 26/30) are converted to the 100-point scale at read time by `normalizeLegacyReport()` in `mock-api.ts`.
 
 Two rubrics swap based on `practiceCount` (prior completed practices, sent from the client): the first 3 practices get `RUBRIC_GENTLE` to protect a user's confidence, then `RUBRIC_STRICT` with hard anchors. Both rubrics carve out an exception: device tests, chit-chat, and empty content always score below 20.
 
@@ -67,6 +67,5 @@ Auth is a mock. `/api/auth/send-otp` stores `base64(phone:code:expiry)` in an ht
 
 ## Gotchas
 
-- `src/lib/reviewers.ts` still carries **stale V1 values** — the old max scores (25/20/20/15/10/10) and the old `optimizer` role name "优化潜力" (now "整体成稿度"). Only `avatarChar`/`name`/`role` are actually rendered, from the `REVIEWERS` alias used to draw the coach panel on `/` and `/practice`. `COACH_MAX_SCORES` and `calcTotalScore` are dead. Never read scoring weights from this file.
+- `src/lib/reviewers.ts` is display-only (avatar/name/role for the coach panels on `/` and `/practice`). It deliberately holds no scores or weights — never add them back; the source of truth is `COACH_WEIGHTS` in the report route.
 - `normalizeCoaches()` emits coaches in a fixed order regardless of what the model returns, backfilling any the model omits.
-- The report page reads `maxScore` off the *report data* (server-computed weights), not off `reviewers.ts`.

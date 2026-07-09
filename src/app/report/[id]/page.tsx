@@ -199,7 +199,6 @@ export default function ReportPage() {
                   >
                     {c.score}
                   </span>
-                  <span className="text-xs font-bold text-[var(--quiet)]">/{c.maxScore}</span>
                 </div>
                 <div className="mt-0.5 text-[11px] leading-tight text-[var(--muted)]">{c.role}</div>
               </motion.div>
@@ -350,7 +349,6 @@ function CoachCard({
           >
             {coach.score}
           </span>
-          <span className="text-xs font-bold text-[var(--quiet)]">/{coach.maxScore}</span>
         </div>
         <div className="text-[var(--muted)]">
           {open ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
