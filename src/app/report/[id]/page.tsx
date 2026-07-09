@@ -115,6 +115,28 @@ export default function ReportPage() {
           </motion.button>
         </motion.div>
 
+        {/* 示例报告提示：AI 评审失败时的兜底数据，分数不入历史 */}
+        {report.isFallback && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-start gap-3 rounded-2xl px-5 py-4"
+            style={{ background: "var(--lavender-soft)", border: "1px solid var(--line)" }}
+          >
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-[var(--blue-deep)]" />
+            <div className="text-sm leading-relaxed text-[var(--ink)]">
+              <span className="font-bold">这是一份示例报告。</span>
+              AI 评审未成功（未配置 API Key 或调用失败），以下分数为演示数据，不会计入你的历史成绩与趋势。
+              <button
+                onClick={() => load(true)}
+                className="ml-1 font-bold text-[var(--blue-deep)] underline underline-offset-2"
+              >
+                重新生成
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {/* 综合分概览：左侧总分 + 右侧 6 教练小卡 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -141,11 +163,20 @@ export default function ReportPage() {
             </div>
             <AnimatedScore value={report.totalScore} />
             <div className="relative text-xs text-white/80">满分 100</div>
-            {report.percentile != null && (
+            {report.rubric && (
+              <div className="relative mt-1 text-[11px] text-white/70">
+                {report.rubric === "strict" ? "严格评分标准" : "鼓励性评分（前 3 次练习）"}
+              </div>
+            )}
+            {report.percentile != null ? (
               <div className="relative mt-1 text-xs text-white/80">
                 超过你 {report.percentile}% 的历史练习
               </div>
-            )}
+            ) : report.rubric === "strict" && !report.isFallback ? (
+              <div className="relative mt-1 text-[11px] text-white/70">
+                评分标准已切换，历史对比重新累计
+              </div>
+            ) : null}
           </div>
 
           {/* 6 教练小卡：3 列 × 2 行 */}

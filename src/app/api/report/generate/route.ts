@@ -87,19 +87,33 @@ ${strict ? RUBRIC_STRICT : RUBRIC_GENTLE}
 
 请严格按照 JSON 格式返回，不要包含任何其他文字。`;
 
+// 输入长度上限：防止超长文稿把回复挤到 max_tokens 截断（截断会导致 JSON 解析失败）
+const MAX_TRANSCRIPT_CHARS = 6000;
+const MAX_FILE_CHARS = 3000;
+
+const truncate = (text: string, max: number) =>
+  text.length > max ? text.slice(0, max) + "\n（内容过长，已截断）" : text;
+
 const USER_PROMPT_TEMPLATE = (
   transcript: string,
   fileName: string,
-  fileContent: string
+  fileContent: string,
+  mode: string,
+  durationS: number,
+  pauseCount: number
 ) => `请对以下演讲内容进行评审，生成 JSON 报告。
 
 练习场景：${fileName || "通用表达练习"}
+练习模式：${mode === "10min" ? "10 分钟练习" : "5 分钟练习"}
+实际发言时长：${durationS > 0 ? `${Math.floor(durationS / 60)} 分 ${durationS % 60} 秒` : "未知"}
+暂停次数：${pauseCount} 次
+（时长与暂停是客观采集数据：如果实际时长远低于练习模式的预期，场景教练应在场景完成度中如实反映；暂停偏多时表达教练可结合文本判断是否存在组织语言困难。不要假装知道语速、音量等未提供的音频指标。）
 
 参考文稿（${fileName || "未命名文稿"}）：
-${fileContent || "（用户未上传参考文稿）"}
+${fileContent ? truncate(fileContent, MAX_FILE_CHARS) : "（用户未上传参考文稿）"}
 
 演讲转写文本：
-${transcript || "（转写为空，请基于参考文稿给出预期分析）"}
+${transcript ? truncate(transcript, MAX_TRANSCRIPT_CHARS) : "（转写为空，请基于参考文稿给出预期分析）"}
 
 请返回以下 JSON 格式（确保是合法 JSON，不要有注释）：
 {
@@ -177,6 +191,9 @@ export async function POST(request: Request) {
     fileName: string;
     fileContent: string;
     practiceCount?: number;
+    mode?: string;
+    durationS?: number;
+    pauseCount?: number;
   };
 
   try {
@@ -186,8 +203,12 @@ export async function POST(request: Request) {
   }
 
   const { practiceId, transcript, fileName, fileContent } = body;
+  const mode = body.mode ?? "5min";
+  const durationS = body.durationS ?? 0;
+  const pauseCount = body.pauseCount ?? 0;
   // 前 3 次练习用鼓励性校准，之后切严格锚点
   const strict = (body.practiceCount ?? 0) >= 3;
+  const rubric = strict ? "strict" : "gentle";
 
   if (!practiceId) {
     return NextResponse.json({ error: "缺少 practiceId" }, { status: 400 });
@@ -199,6 +220,7 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json({
       ...generateFallbackReport(practiceId, fileName, transcript),
+      rubric,
       _fallback: true,
       _message: "未配置 DEEPSEEK_API_KEY，返回示例报告。配置后可获得真实 AI 评审。",
     });
@@ -217,10 +239,11 @@ export async function POST(request: Request) {
           { role: "system", content: buildSystemPrompt(strict) },
           {
             role: "user",
-            content: USER_PROMPT_TEMPLATE(transcript, fileName, fileContent),
+            content: USER_PROMPT_TEMPLATE(transcript, fileName, fileContent, mode, durationS, pauseCount),
           },
         ],
-        temperature: 0.7,
+        // 评分任务用低温度：同一发言重测分数应稳定，噪声会淹没用户的真实进步
+        temperature: 0.3,
         response_format: { type: "json_object" },
         max_tokens: 8000,
       }),
@@ -232,6 +255,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           ...generateFallbackReport(practiceId, fileName, transcript),
+          rubric,
           _fallback: true,
           _message: `DeepSeek 调用失败（${response.status}），返回示例报告`,
         },
@@ -241,13 +265,29 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
+    const finishReason = data.choices?.[0]?.finish_reason;
 
     if (!content) {
       return NextResponse.json(
         {
           ...generateFallbackReport(practiceId, fileName, transcript),
+          rubric,
           _fallback: true,
           _message: "DeepSeek 返回为空，返回示例报告",
+        },
+        { status: 200 }
+      );
+    }
+
+    // 回复被 max_tokens 截断时 JSON 必然不完整，明确报告而不是静默走 catch
+    if (finishReason === "length") {
+      console.error("DeepSeek response truncated at max_tokens");
+      return NextResponse.json(
+        {
+          ...generateFallbackReport(practiceId, fileName, transcript),
+          rubric,
+          _fallback: true,
+          _message: "发言内容过长，AI 回复被截断，返回示例报告。请尝试重新生成",
         },
         { status: 200 }
       );
@@ -264,6 +304,7 @@ export async function POST(request: Request) {
       practiceId,
       totalScore,
       percentile: null,
+      rubric,
       overall: {
         summary: report.overall?.summary || "本次练习整体不错，有明确提升空间。",
         highlights: Array.isArray(report.overall?.highlights)
@@ -284,6 +325,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ...generateFallbackReport(practiceId, fileName, transcript),
+        rubric,
         _fallback: true,
         _message: "AI 评审出错，返回示例报告",
       },

@@ -180,10 +180,10 @@ export async function generateReport(practiceId: string): Promise<PracticeReport
     fileContent = localStorage.getItem(`speakcoach_file_${practiceId}`) ?? "";
   }
 
-  // 本次之前的历史总分：用于打分校准（前松后严）和百分位计算
-  const prevScores = records
-    .filter((r) => r.id !== practiceId && r.status === "completed" && typeof r.totalScore === "number")
-    .map((r) => r.totalScore as number);
+  // 本次之前已完成的练习：数量决定打分校准（前松后严），有分记录用于百分位
+  const prevCompleted = records.filter(
+    (r) => r.id !== practiceId && r.status === "completed"
+  );
 
   // 调用服务端 API（DeepSeek）
   try {
@@ -195,38 +195,60 @@ export async function generateReport(practiceId: string): Promise<PracticeReport
         transcript,
         fileName,
         fileContent,
-        practiceCount: prevScores.length,
+        practiceCount: prevCompleted.length,
+        mode: record?.mode,
+        durationS: record?.durationS ?? 0,
+        pauseCount: record?.pauseCount ?? 0,
       }),
     });
     const data = await res.json();
+    const isFallback = !!data._fallback;
 
-    // 百分位基于本地历史真实计算：超过自己多少比例的历史练习；首次练习无基准，不展示
-    const percentile = prevScores.length
-      ? Math.round((prevScores.filter((s) => s < data.totalScore).length / prevScores.length) * 100)
-      : null;
+    // 百分位只跟同一套评分标准下的历史分数比（宽松期和严格期的分数不可比，
+    // 否则切严格标准那次会显示"超过 0%"，误导用户以为退步了）。旧记录无 rubric 视为 gentle
+    const sameRubricScores = prevCompleted
+      .filter(
+        (r) =>
+          typeof r.totalScore === "number" &&
+          (r.rubric ?? "gentle") === data.rubric
+      )
+      .map((r) => r.totalScore as number);
+    const percentile =
+      !isFallback && sameRubricScores.length
+        ? Math.round(
+            (sameRubricScores.filter((s) => s < data.totalScore).length /
+              sameRubricScores.length) *
+              100
+          )
+        : null;
 
-    // 如果返回了 fallback 标记，仍然使用数据但不报错
     // 映射 7-agent 架构字段（overall + coaches）
     const report: PracticeReport = {
       id: data.id ?? genId(),
       practiceId,
       totalScore: data.totalScore,
       percentile,
+      rubric: data.rubric ?? "gentle",
+      isFallback,
       overall: data.overall,
       coaches: data.coaches,
       createdAt: data.createdAt ?? new Date().toISOString(),
     };
 
-    // 保存报告到 localStorage
-    const reports = loadReports();
-    reports[practiceId] = report;
-    saveReports(reports);
+    // 示例报告（fallback）的分数是随机生成的：给用户看但不持久化，
+    // 不回写记录分数，避免假分数进入历史、趋势和百分位基准
+    if (!isFallback) {
+      const reports = loadReports();
+      reports[practiceId] = report;
+      saveReports(reports);
 
-    // 回写记录的分数与评语
-    if (record) {
-      record.totalScore = report.totalScore;
-      record.comment = report.overall.summary.slice(0, 60);
-      saveRecords(records);
+      // 回写记录的分数、评分标准与评语
+      if (record) {
+        record.totalScore = report.totalScore;
+        record.rubric = report.rubric;
+        record.comment = report.overall.summary.slice(0, 60);
+        saveRecords(records);
+      }
     }
 
     return report;

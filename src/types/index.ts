@@ -41,12 +41,17 @@ export interface CoachReport {
   nextTask?: string;
 }
 
+// 评分标准版本：前 3 次鼓励性校准，之后严格锚点。两套标准的分数不可直接比较
+export type RubricVersion = "gentle" | "strict";
+
 // 完整报告
 export interface PracticeReport {
   id: string;
   practiceId: string;
   totalScore: number;
-  percentile: number | null; // 超过自己 X% 的历史练习，首次练习为 null（不展示）
+  percentile: number | null; // 超过自己 X% 的同标准历史练习，无同标准基准时为 null（不展示）
+  rubric: RubricVersion;
+  isFallback?: boolean; // 示例报告（未配置 key 或 AI 调用失败），分数不入历史
   overall: OverallAssessment;
   coaches: CoachReport[];
   createdAt: string;
@@ -63,6 +68,7 @@ export interface PracticeRecord {
   status: "active" | "completed";
   favorite: boolean;
   totalScore?: number;
+  rubric?: RubricVersion; // 该分数是在哪套评分标准下打的（旧记录无此字段，视为 gentle）
   comment?: string; // 教练总评摘要
   createdAt: string;
 }
