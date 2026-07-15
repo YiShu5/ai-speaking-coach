@@ -9,31 +9,33 @@ export interface CoachInfo {
   maxScore: number;
 }
 
-// 6 个分项教练（7-agent 架构：1 总评 + 6 分项教练）
+// 6 个分项教练（7-agent 架构：1 总评 + 6 分项教练），每位教练打 0-100 分
 export const COACHES: CoachInfo[] = [
-  { id: "logic", name: "逻辑教练", role: "逻辑结构", avatarChar: "逻", maxScore: 25 },
-  { id: "keypoint", name: "重点教练", role: "重点表达", avatarChar: "重", maxScore: 20 },
-  { id: "expression", name: "表达教练", role: "表达流畅", avatarChar: "表", maxScore: 20 },
-  { id: "scene", name: "场景教练", role: "场景完成度", avatarChar: "景", maxScore: 15 },
-  { id: "audience", name: "听众代表", role: "听众理解度", avatarChar: "听", maxScore: 10 },
-  { id: "optimizer", name: "优化教练", role: "优化潜力", avatarChar: "优", maxScore: 10 },
+  { id: "logic", name: "逻辑教练", role: "逻辑结构", avatarChar: "逻", maxScore: 100 },
+  { id: "keypoint", name: "重点教练", role: "重点表达", avatarChar: "重", maxScore: 100 },
+  { id: "expression", name: "表达教练", role: "表达流畅", avatarChar: "表", maxScore: 100 },
+  { id: "scene", name: "场景教练", role: "场景完成度", avatarChar: "景", maxScore: 100 },
+  { id: "audience", name: "听众代表", role: "听众理解度", avatarChar: "听", maxScore: 100 },
+  { id: "optimizer", name: "优化教练", role: "整体成稿度", avatarChar: "优", maxScore: 100 },
 ];
 
-// 各教练满分（满分制，总分 100）
-export const COACH_MAX_SCORES: Record<CoachId, number> = {
-  logic: 25,
-  keypoint: 20,
-  expression: 20,
-  scene: 15,
-  audience: 10,
-  optimizer: 10,
+// 教练权重（百分比，合计 100）：总分 = Σ(教练分 × 权重) / 100，改权重只需改这里
+export const COACH_WEIGHTS: Record<CoachId, number> = {
+  logic: 30,
+  keypoint: 25,
+  optimizer: 15,
+  expression: 12,
+  scene: 10,
+  audience: 8,
 };
 
-// 计算综合分（6 个教练分数之和，满分 100）
+// 计算综合分（6 个教练 0-100 分按权重加权平均，满分 100）
 export function calcTotalScore(scores: Record<CoachId, number>): number {
-  return Object.entries(scores).reduce(
-    (sum, [_id, score]) => sum + score,
-    0
+  return Math.round(
+    Object.entries(scores).reduce(
+      (sum, [id, score]) => sum + score * (COACH_WEIGHTS[id as CoachId] ?? 0),
+      0
+    ) / 100
   );
 }
 

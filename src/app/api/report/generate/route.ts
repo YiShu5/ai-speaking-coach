@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
+import { COACH_WEIGHTS } from "@/lib/reviewers";
 
 // DeepSeek 报告生成 API
 // 7-agent 架构：1 个总评 agent + 6 个分项教练 agent，一次调用返回完整 JSON
+// 评分：每位教练 0-100 分直接展示，总分 = 加权平均（权重见 @/lib/reviewers）
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
-
-// 教练权重（总分 100，服务端加权合成，改权重只需改这里）
-const COACH_WEIGHTS: Record<string, number> = {
-  logic: 30,
-  keypoint: 25,
-  optimizer: 15,
-  expression: 12,
-  scene: 10,
-  audience: 8,
-};
 
 // 严格锚点评分标准（第 4 次练习起）
 const RUBRIC_STRICT = `评分锚点（每位教练对自己的维度打 0-100 整数分，严格执行）：
@@ -256,8 +248,13 @@ export async function POST(request: Request) {
     const report = JSON.parse(content);
     const coaches = normalizeCoaches(report.coaches);
 
-    // 总分由服务端按权重合成，不信任模型自算；百分位由客户端基于本地历史计算
-    const totalScore = coaches.reduce((sum, c) => sum + c.score, 0);
+    // 总分由服务端按权重加权平均合成（满分 100），不信任模型自算；百分位由客户端基于本地历史计算
+    const totalScore = Math.round(
+      coaches.reduce(
+        (sum, c) => sum + c.score * (COACH_WEIGHTS[c.id as keyof typeof COACH_WEIGHTS] ?? 0),
+        0
+      ) / 100
+    );
 
     const fullReport = {
       id: `r_${Date.now()}`,
@@ -303,7 +300,7 @@ const AVATAR_MAP: Record<string, string> = {
 };
 
 // 规范化 coaches 数组：补全字段、按固定顺序输出
-// 模型给的是 0-100 原始分，这里按权重折算成加权分（score/maxScore=加权分/权重）
+// 模型给的是 0-100 原始分，直接作为教练展示分（百分制）；权重只在合成总分时使用
 function normalizeCoaches(coaches: unknown): Array<{
   id: string;
   name: string;
@@ -327,9 +324,9 @@ function normalizeCoaches(coaches: unknown): Array<{
 
   return order.map((id) => {
     const c = byId.get(id) || {};
-    const maxScore = COACH_WEIGHTS[id];
+    const maxScore = 100;
     const raw = typeof c.score === "number" ? Math.min(Math.max(c.score, 0), 100) : 0;
-    const score = Math.round((raw / 100) * maxScore);
+    const score = Math.round(raw);
     return {
       id,
       name: (c.name as string) || COACH_NAMES[id] || "教练",
@@ -370,18 +367,24 @@ const COACH_ROLES: Record<string, string> = {
 // Fallback 报告（无 API key 或调用失败时使用），结构与新数据模型一致
 function generateFallbackReport(practiceId: string, fileName: string, transcript: string) {
   const hasTranscript = transcript && transcript.trim().length > 20;
-  // 各教练分数（按权重折算，不超过各自权重）
-  const scoreGen = (max: number) => Math.min(max, Math.floor(max * (0.7 + Math.random() * 0.18)));
+  // 各教练分数（百分制 0-100），总分按权重加权平均
+  const scoreGen = () => Math.floor(100 * (0.7 + Math.random() * 0.18));
   const scores = {
-    logic: scoreGen(COACH_WEIGHTS.logic),
-    keypoint: scoreGen(COACH_WEIGHTS.keypoint),
-    expression: scoreGen(COACH_WEIGHTS.expression),
-    scene: scoreGen(COACH_WEIGHTS.scene),
-    audience: scoreGen(COACH_WEIGHTS.audience),
-    optimizer: scoreGen(COACH_WEIGHTS.optimizer),
+    logic: scoreGen(),
+    keypoint: scoreGen(),
+    expression: scoreGen(),
+    scene: scoreGen(),
+    audience: scoreGen(),
+    optimizer: scoreGen(),
   };
-  const totalScore =
-    scores.logic + scores.keypoint + scores.expression + scores.scene + scores.audience + scores.optimizer;
+  const totalScore = Math.round(
+    (scores.logic * COACH_WEIGHTS.logic +
+      scores.keypoint * COACH_WEIGHTS.keypoint +
+      scores.expression * COACH_WEIGHTS.expression +
+      scores.scene * COACH_WEIGHTS.scene +
+      scores.audience * COACH_WEIGHTS.audience +
+      scores.optimizer * COACH_WEIGHTS.optimizer) / 100
+  );
 
   const firstLine = hasTranscript ? transcript.slice(0, 30) + "…" : "今天想和大家聊一下最近做的事情。";
 
@@ -392,7 +395,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "逻辑结构",
       avatarChar: "逻",
       score: scores.logic,
-      maxScore: COACH_WEIGHTS.logic,
+      maxScore: 100,
       summary: "主线推进有条理，结论先行可以让听众更快进入状态。注意中段衔接不要跳跃。",
       revisions: [
         {
@@ -408,7 +411,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "重点表达",
       avatarChar: "重",
       score: scores.keypoint,
-      maxScore: COACH_WEIGHTS.keypoint,
+      maxScore: 100,
       summary: "信息量基本覆盖，但部分铺垫过长，关键结论可以更早出现。",
       revisions: [
         {
@@ -424,7 +427,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "表达流畅",
       avatarChar: "表",
       score: scores.expression,
-      maxScore: COACH_WEIGHTS.expression,
+      maxScore: 100,
       summary: "节奏平稳，减少填充词后句子会更直接有力。注意长句拆分。",
       revisions: [
         {
@@ -440,7 +443,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "场景完成度",
       avatarChar: "景",
       score: scores.scene,
-      maxScore: COACH_WEIGHTS.scene,
+      maxScore: 100,
       summary: "措辞与场景基本匹配，注意根据听众调整技术语言密度，补齐场景必备信息。",
       revisions: [
         {
@@ -456,7 +459,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "听众理解度",
       avatarChar: "听",
       score: scores.audience,
-      maxScore: COACH_WEIGHTS.audience,
+      maxScore: 100,
       summary: "我基本听懂了整体进展，但具体数据没记住，结尾想追问下一步要什么支持。",
       revisions: [
         {
@@ -472,7 +475,7 @@ function generateFallbackReport(practiceId: string, fileName: string, transcript
       role: "整体成稿度",
       avatarChar: "优",
       score: scores.optimizer,
-      maxScore: COACH_WEIGHTS.optimizer,
+      maxScore: 100,
       summary: "综合各教练诊断，最需要改进的是结论先行和量化证据，下面给出一版可直接开口的优化稿。",
       revisions: [
         {
